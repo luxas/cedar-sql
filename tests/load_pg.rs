@@ -34,8 +34,24 @@ fn round_trip() {
         db.execute_batch(statement)
             .unwrap_or_else(|e| panic!("{statement}\n{e}"));
     }
-    // The deferred foreign keys hold.
-    db.execute_batch("SET CONSTRAINTS ALL IMMEDIATE").unwrap();
+    // The deferred foreign keys hold, except carol's dangling friend.
+    let violation = db
+        .execute_batch("SET CONSTRAINTS ALL IMMEDIATE")
+        .expect_err("carol's friend does not exist");
+    assert!(
+        violation.to_string().contains("User_friend_fkey"),
+        "{violation}"
+    );
+    db.rollback().unwrap();
+    db.begin().unwrap();
+    let mut without_fks = config.clone();
+    without_fks.emit_foreign_keys = false;
+    for statement in create_tables(&without_fks, &Postgres).unwrap() {
+        db.execute_batch(&statement).unwrap();
+    }
+    for statement in &load.statements {
+        db.execute_batch(statement).unwrap();
+    }
 
     let users = db
         .query(
@@ -66,6 +82,17 @@ fn round_trip() {
                 SqlValue::Json(json!([])),
                 SqlValue::Json(json!({"r": {"city": "", "pets": []}})),
                 SqlValue::Null,
+                SqlValue::Json(json!([])),
+            ],
+            vec![
+                text("carol"),
+                text("User"),
+                text("Carol"),
+                SqlValue::Null,
+                SqlValue::Bool(false),
+                SqlValue::Json(json!(["x"])),
+                SqlValue::Json(json!({"r": {"city": "Oslo", "pets": [7]}})),
+                text("ghost"),
                 SqlValue::Json(json!([])),
             ],
         ]

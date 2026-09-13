@@ -27,11 +27,24 @@ pub enum Error {
         /// What is wrong with it.
         message: String,
     },
+    /// The policies do not validate against the schema (strict mode), which
+    /// the compilation requires.
+    #[error("the policies do not validate: {0}")]
+    Validation(String),
+    /// The request is not valid for the schema, or is not concrete enough.
+    #[error("invalid request: {0}")]
+    Request(String),
+    /// Partial evaluation failed.
+    #[error("partial evaluation failed: {0}")]
+    Tpe(String),
+    /// The query returned rows this crate cannot interpret.
+    #[error("unexpected query result: {0}")]
+    Query(String),
     /// The entities cannot be turned into rows of the configured tables.
     #[error("cannot load entities: {0}")]
     Load(String),
     /// The database returned an error.
-    #[error("database error: {0}")]
+    #[error("database error: {}", describe(.0))]
     Database(#[from] postgres::Error),
     /// A row's column had a type or value this crate cannot decode.
     #[error("cannot decode column {column}: {message}")]
@@ -44,4 +57,18 @@ pub enum Error {
     /// The test-only database provisioning failed (feature `testing`).
     #[error("cannot provision a Postgres for testing: {0}")]
     Provision(String),
+}
+
+/// The server's message when there is one (`postgres::Error`'s own `Display`
+/// is only "db error"), else the client-side description.
+fn describe(error: &postgres::Error) -> String {
+    match error.as_db_error() {
+        Some(db) => format!(
+            "{} ({}){}",
+            db.message(),
+            db.code().code(),
+            db.detail().map(|d| format!(": {d}")).unwrap_or_default()
+        ),
+        None => error.to_string(),
+    }
 }
