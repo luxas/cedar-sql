@@ -95,6 +95,17 @@ fn round_trip() {
                 text("ghost"),
                 SqlValue::Json(json!([])),
             ],
+            vec![
+                text("weird\"q\\s"),
+                text("User"),
+                text("50%_x\\y\nz"),
+                SqlValue::Null,
+                SqlValue::Bool(false),
+                SqlValue::Json(json!([])),
+                SqlValue::Json(json!({"r": {"city": "", "pets": []}})),
+                SqlValue::Null,
+                SqlValue::Json(json!([])),
+            ],
         ]
     );
     let hierarchy = db
@@ -231,21 +242,35 @@ fn rejects_bad_entities() {
     // do not mix.
     assert!(
         case(r#"[{"uid": {"type": "Doc", "id": "d"}, "attrs": {"owner": {"__entity": {"type": "Group", "id": "g"}}}, "parents": []}]"#)
-            .contains("referencing User")
+            .contains("does not conform")
     );
     assert!(
         case(
             r#"[{"uid": {"type": "Doc", "id": "d"}, "attrs": {"owner": "alice"}, "parents": []}]"#
         )
-        .contains("referencing User")
+        .contains("does not conform")
     );
     assert!(
         case(r#"[{"uid": {"type": "Group", "id": "g"}, "attrs": {}, "parents": [], "tags": {}}, {"uid": {"type": "User", "id": "u"}, "attrs": {"name": {"__entity": {"type": "User", "id": "x"}}, "admin": true, "groups": [], "profile": {"city": "", "pets": []}, "friends": []}, "parents": []}]"#)
-            .contains("cannot be stored in a column of type Text")
+            .contains("does not conform")
     );
     assert!(
         case(r#"[{"uid": {"type": "Doc", "id": "d"}, "attrs": {"owner": {"__entity": {"type": "User", "id": "u"}}}, "parents": [], "tags": {"t": {"__entity": {"type": "Group", "id": "g"}}}}]"#)
-            .contains("referencing User")
+            .contains("does not conform")
+    );
+    // JSON-stored contents must conform to their type: an entity of the
+    // wrong type inside a record or a set, an undeclared record attribute.
+    assert!(
+        case(r#"[{"uid": {"type": "User", "id": "u"}, "attrs": {"name": "x", "admin": true, "groups": [], "profile": {"city": "", "pets": [], "boss": {"__entity": {"type": "Group", "id": "g"}}}, "friends": []}, "parents": []}]"#)
+            .contains("does not conform")
+    );
+    assert!(
+        case(r#"[{"uid": {"type": "User", "id": "u"}, "attrs": {"name": "x", "admin": true, "groups": [], "profile": {"city": "", "pets": []}, "friends": [{"__entity": {"type": "Group", "id": "g"}}]}, "parents": []}]"#)
+            .contains("does not conform")
+    );
+    assert!(
+        case(r#"[{"uid": {"type": "User", "id": "u"}, "attrs": {"name": "x", "admin": true, "groups": [], "profile": {"city": "", "pets": [], "extra": 1}, "friends": []}, "parents": []}]"#)
+            .contains("not declared")
     );
     // A NUL character, which Postgres cannot store, is rejected up front.
     let nul = Entity::new_no_attrs(

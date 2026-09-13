@@ -17,6 +17,7 @@ use cedar_policy_core::ast::{
     Entity, EntityType, EntityUID, Literal, PartialValue, Value, ValueKind,
 };
 use cedar_policy_core::validator::ValidatorSchema;
+use cedar_policy_core::validator::types::{EntityKind, OpenTag, Type};
 use serde_json::json;
 
 use crate::config::{
@@ -86,7 +87,13 @@ pub fn entities_to_sql(
                         "required attribute {attr} of {uid} is missing"
                     )));
                 }
-                Some(PartialValue::Value(v)) => literal(v, cc, dialect)?,
+                Some(PartialValue::Value(v)) => {
+                    if let Some(attr_type) = vet.attr(attr) {
+                        conforms(v, &attr_type.attr_type)
+                            .map_err(|e| Error::Load(format!("attribute {attr} of {uid}: {e}")))?;
+                    }
+                    literal(v, cc, dialect)?
+                }
                 Some(PartialValue::Residual(_)) => {
                     return Err(Error::Unsupported("entities with unknown attribute values"));
                 }
@@ -134,6 +141,10 @@ pub fn entities_to_sql(
             let PartialValue::Value(value) = value else {
                 return Err(Error::Unsupported("entities with unknown tag values"));
             };
+            if let Some(tag_type) = vet.tag_type() {
+                conforms(value, tag_type)
+                    .map_err(|e| Error::Load(format!("tag {tag} of {uid}: {e}")))?;
+            }
             load.statements.push(format!(
                 "INSERT INTO {} (\"{TAGS_ENTITY_ID_COLUMN}\", \"{TAGS_TAG_COLUMN}\", \"{TAGS_VALUE_COLUMN}\") VALUES ({eid}, {}, {})",
                 tags_table.table,
@@ -143,6 +154,57 @@ pub fn entities_to_sql(
         }
     }
     Ok(load)
+}
+
+/// Whether `value` conforms to the validator type `ty`: the compiled queries
+/// trust the static types of JSON-stored contents (entity references inside
+/// sets and records are compared by id), so the loader checks them.
+pub fn conforms(value: &Value, ty: &Type) -> std::result::Result<(), String> {
+    let mismatch = || format!("the value {value} does not conform to the type {ty}");
+    match (ty, value.value_kind()) {
+        (Type::Bool(_), ValueKind::Lit(Literal::Bool(_)))
+        | (Type::Long, ValueKind::Lit(Literal::Long(_)))
+        | (Type::String, ValueKind::Lit(Literal::String(_)))
+        | (Type::Entity(EntityKind::AnyEntity), ValueKind::Lit(Literal::EntityUID(_)))
+        | (Type::ExtensionType { .. }, ValueKind::ExtensionValue(_)) => Ok(()),
+        (Type::Entity(EntityKind::Entity(lub)), ValueKind::Lit(Literal::EntityUID(uid))) => {
+            match lub.get_single_entity() {
+                Some(ety) if ety == uid.entity_type() => Ok(()),
+                Some(_) => Err(mismatch()),
+                None => Err("union entity types are not supported".to_owned()),
+            }
+        }
+        (Type::Set { element_type }, ValueKind::Set(set)) => match element_type {
+            Some(element) => set.iter().try_for_each(|v| conforms(v, element)),
+            None => Ok(()),
+        },
+        (
+            Type::Record {
+                attrs,
+                open_attributes,
+            },
+            ValueKind::Record(record),
+        ) => {
+            for (key, attr) in attrs.iter() {
+                match record.get(key) {
+                    Some(v) => conforms(v, &attr.attr_type)?,
+                    None if attr.is_required => {
+                        return Err(format!(
+                            "the required attribute {key} is missing in {value}"
+                        ));
+                    }
+                    None => {}
+                }
+            }
+            if *open_attributes == OpenTag::ClosedAttributes
+                && let Some(extra) = record.keys().find(|k| attrs.get_attr(k).is_none())
+            {
+                return Err(format!("the attribute {extra} of {value} is not declared"));
+            }
+            Ok(())
+        }
+        _ => Err(mismatch()),
+    }
 }
 
 /// `value` as a SQL literal for `column`: strings and entity references of

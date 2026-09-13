@@ -14,9 +14,11 @@ pub struct PgBackend {
 impl PgBackend {
     /// Connects to `url` (a `postgres://` URL or a key-value connection string).
     pub fn connect(url: &str) -> Result<Self> {
-        Ok(Self {
-            client: Client::connect(url, NoTls)?,
-        })
+        let mut client = Client::connect(url, NoTls)?;
+        // The generated SQL quotes strings with `'` doubled and treats `\`
+        // literally, which is only right with standard conforming strings.
+        client.batch_execute("SET standard_conforming_strings = on")?;
+        Ok(Self { client })
     }
 
     /// The underlying client.
