@@ -110,7 +110,7 @@ const D1: &str = "Doc::\"d1\"";
 const GHOST_NAME: &str = "User::\"ghost\".name == \"x\"";
 
 fn permit(condition: &str) -> String {
-    format!("permit(principal, action, resource) when {{ {condition} }};")
+    format!("permit(principal, action == Action::\"view\", resource) when {{ {condition} }};")
 }
 
 fn ids(response: &Response) -> (Vec<String>, Vec<String>) {
@@ -543,7 +543,7 @@ fn hierarchy_and_tags() {
 fn decisions() {
     let mut fx = Fixture::new(true);
     let both = format!(
-        "{}\nforbid(principal, action, resource) when {{ principal.name == \"Alice\" }};",
+        "{}\nforbid(principal, action == Action::\"view\", resource) when {{ principal.name == \"Alice\" }};",
         permit("true")
     );
     let r = fx.check(&both, ALICE, D1);
@@ -569,7 +569,7 @@ fn decisions() {
     assert_eq!(ids(&r), (vec![], vec!["policy0".to_owned()]));
     // A forbid that errors does not deny.
     let forbid_errs = format!(
-        "{}\nforbid(principal, action, resource) when {{ {GHOST_NAME} }};",
+        "{}\nforbid(principal, action == Action::\"view\", resource) when {{ {GHOST_NAME} }};",
         permit("true")
     );
     let r = fx.check(&forbid_errs, ALICE, D1);
@@ -787,6 +787,22 @@ fn review_probes() {
             ALICE,
         );
         allow(&mut fx, "principal in [principal]", ALICE);
+        // An attribute name containing a dot next to the path it spells.
+        allow(
+            &mut fx,
+            "principal has friend && principal.friend has name && principal has \"friend.name\" && principal[\"friend.name\"] == principal.friend.name",
+            ALICE,
+        );
+        deny(
+            &mut fx,
+            "principal has \"friend.name\" && principal[\"friend.name\"] == \"Bob\" && principal has friend && principal.friend has name",
+            CAROL,
+        );
+        allow(
+            &mut fx,
+            "principal has \"friend.name\" && principal[\"friend.name\"] == \"Bob\"",
+            CAROL,
+        );
     }
 }
 

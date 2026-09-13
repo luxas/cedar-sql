@@ -1036,25 +1036,35 @@ fn root_raw_name(root: &RootKey) -> String {
     }
 }
 
+/// The separator of attribute path segments in generated names: attribute
+/// names may contain `.`, so `principal["b.c"]` and `principal.b.c` must
+/// not collide.
+const SEGMENT: &str = "\x1f";
+
 /// The quoted alias of the join for `path` under `root` (the root itself
 /// for the empty path).
 fn alias_name(root: &RootKey, path: &[SmolStr]) -> String {
     if path.is_empty() {
         return root_name(root);
     }
-    shortened(&format!("{}.{}", root_raw_name(root), path.join("."))).to_string()
+    shortened(&format!(
+        "{}{SEGMENT}{}",
+        root_raw_name(root),
+        path.join(SEGMENT)
+    ))
+    .to_string()
 }
 
 /// The quoted CTE column holding the value of an attribute path.
 fn value_column(path: &[SmolStr]) -> String {
-    shortened(&format!("$v:{}", path.join("."))).to_string()
+    shortened(&format!("$v:{}", path.join(SEGMENT))).to_string()
 }
 
 fn ancestors_name(anchor: &Anchor) -> SQLIdentifier {
     let path = if anchor.path.is_empty() {
         String::new()
     } else {
-        format!(".{}", anchor.path.join("."))
+        format!("{SEGMENT}{}", anchor.path.join(SEGMENT))
     };
     shortened(&format!("{}{path}$ancestors", root_raw_name(&anchor.root)))
 }

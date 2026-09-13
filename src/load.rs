@@ -257,9 +257,7 @@ pub fn canonical_json(value: &Value) -> Result<serde_json::Value> {
         ValueKind::Lit(Literal::Long(n)) => json!(n),
         ValueKind::Lit(Literal::String(s)) => {
             if s.contains('\0') {
-                return Err(Error::Load(format!(
-                    "the string {s:?} contains a NUL character, which Postgres cannot store"
-                )));
+                return Err(Error::Nul(s.to_string()));
             }
             json!(s.as_str())
         }
@@ -272,9 +270,7 @@ pub fn canonical_json(value: &Value) -> Result<serde_json::Value> {
                 .iter()
                 .map(|(k, v)| {
                     if k.contains('\0') {
-                        return Err(Error::Load(format!(
-                            "the record key {k:?} contains a NUL character, which Postgres cannot store"
-                        )));
+                        return Err(Error::Nul(k.to_string()));
                     }
                     Ok((k.to_string(), canonical_json(v)?))
                 })

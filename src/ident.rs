@@ -104,9 +104,7 @@ fn fnv1a(s: &str) -> u64 {
 /// When `s` contains a NUL character, which Postgres `text` cannot store.
 pub fn quoted_literal(s: &str) -> Result<String> {
     if s.contains('\0') {
-        return Err(Error::Load(format!(
-            "the string {s:?} contains a NUL character, which Postgres cannot store"
-        )));
+        return Err(Error::Nul(s.to_owned()));
     }
     Ok(format!("'{}'", s.replace('\'', "''")))
 }

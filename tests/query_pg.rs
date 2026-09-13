@@ -50,9 +50,15 @@ impl Fixture {
     }
 
     fn request(&self, principal: &str, resource: &str) -> Request {
+        let action = match resource.split("::").next().unwrap() {
+            "User" => "mate",
+            "Empty" => "empty",
+            "Color" => "color",
+            _ => "view",
+        };
         Request::new(
             EntityUid::from_str(principal).unwrap(),
-            EntityUid::from_str("Action::\"view\"").unwrap(),
+            EntityUid::from_str(&format!("Action::\"{action}\"")).unwrap(),
             EntityUid::from_str(resource).unwrap(),
             Context::from_json_str(r#"{"ip": "1.2.3.4"}"#, None).unwrap(),
             Some(&self.schema),
@@ -147,10 +153,15 @@ impl Fixture {
 }
 
 const ALICE: &str = "User::\"alice\"";
+const BOB: &str = "User::\"bob\"";
 const D1: &str = "Doc::\"d1\"";
 
 fn permit(condition: &str) -> String {
-    format!("permit(principal, action, resource) when {{ {condition} }};")
+    permit_for("view", condition)
+}
+
+fn permit_for(action: &str, condition: &str) -> String {
+    format!("permit(principal, action == Action::\"{action}\", resource) when {{ {condition} }};")
 }
 
 fn allowed(rows: &[QueryRow]) -> BTreeSet<String> {
@@ -291,7 +302,7 @@ fn unknown_resource_and_both() {
     // A forbid over both.
     fx.check(
         &format!(
-            "{}\nforbid(principal, action, resource) when {{ principal.name == \"Bob\" || resource.owner == principal }};",
+            "{}\nforbid(principal, action == Action::\"view\", resource) when {{ principal.name == \"Bob\" || resource.owner == principal }};",
             permit("true")
         ),
         ALICE,
@@ -324,4 +335,85 @@ fn agrees_with_query_resource() {
         .collect();
     assert_eq!(allowed(&rows), expected);
     let _ = PolicyId::new("x");
+}
+
+#[test]
+fn same_type_zero_rows_and_enums() {
+    let mut fx = Fixture::new(true);
+    // The principal and the resource are both users.
+    let rows = fx.check(
+        &permit_for("mate", "principal == resource"),
+        ALICE,
+        ALICE,
+        true,
+        true,
+    );
+    assert_eq!(rows.len(), 16);
+    assert_eq!(allowed_pairs(&rows).len(), 4);
+    fx.check(
+        &permit_for("mate", "principal in resource"),
+        ALICE,
+        ALICE,
+        true,
+        true,
+    );
+    fx.check(
+        &permit("resource in principal.friends"),
+        ALICE,
+        ALICE,
+        true,
+        true,
+    );
+    fx.check(
+        &permit("principal has friend && principal.friend == resource"),
+        ALICE,
+        BOB,
+        true,
+        false,
+    );
+    fx.check(
+        &permit("principal has friend && principal.friend == resource"),
+        ALICE,
+        BOB,
+        false,
+        true,
+    );
+    // A candidate type with no rows yields no rows.
+    let rows = fx.check(
+        "permit(principal, action, resource);",
+        ALICE,
+        "Empty::\"x\"",
+        false,
+        true,
+    );
+    assert!(rows.is_empty());
+    // An enum type: the candidates are its rows, not its declared values.
+    let rows = fx.check(
+        "permit(principal, action, resource);",
+        ALICE,
+        "Color::\"red\"",
+        false,
+        true,
+    );
+    assert_eq!(rows.len(), 1);
+    let rows = fx.check(
+        &permit("resource == Color::\"blue\""),
+        ALICE,
+        "Color::\"red\"",
+        false,
+        true,
+    );
+    assert!(allowed(&rows).is_empty());
+}
+
+fn allowed_pairs(rows: &[QueryRow]) -> BTreeSet<(String, String)> {
+    rows.iter()
+        .filter(|r| r.response.decision == Decision::Allow)
+        .map(|r| {
+            (
+                r.principal.clone().unwrap().to_string(),
+                r.resource.clone().unwrap().to_string(),
+            )
+        })
+        .collect()
 }
