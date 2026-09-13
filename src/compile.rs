@@ -654,10 +654,9 @@ impl<'a> Compiler<'a> {
                 if b.repr != Repr::Text {
                     return Err(Error::Unsupported("a non-string tag"));
                 }
-                let Some((_, table)) = self.config.table_for(ety) else {
-                    return Err(Error::Unsupported("tags of an entity type without a table"));
-                };
-                let Some(tags) = table.tags.clone() else {
+                // An entity type without a table (an action type) has no tags either.
+                let tags = self.config.table_for(ety).and_then(|(_, t)| t.tags.clone());
+                let Some(tags) = tags else {
                     if op == BinaryOp::HasTag {
                         // The validator types `hasTag` on a tagless type as `false`.
                         return Ok(plain(
