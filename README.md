@@ -724,6 +724,34 @@ Other operators are handled accordingly.
 
 The evaluator should eventually pass all Cedar evaluator test using the DRT framework in the `cedar-spec` repo, as well as the `cedar-integration-tests` bundle.
 
+## Status and phases
+
+The implementation is built in phases, one branch and plan document each (`docs/plans/N-slug.md` here, with the
+differential tests and their `docs/plans/cedar-sql-N-slug.md` in the [`cedar-sql-spec`] fork of `cedar-spec`):
+
+1. **init** — the crate skeleton, the Postgres provisioning for tests, CI.
+1. **schema** — Idea 1: the schema annotations, the database configuration, DDL, and loading Cedar entities as rows.
+1. **is-authorized** — Idea 2 for a concrete request over the core operators, and the first differential test.
+1. **values** — sets, records, `like`, tags, and the remaining operators.
+1. **query** — unknown `principal` and/or `resource`, returning one row per candidate.
+1. **corpus** — the `cedar-integration-tests` corpus and hardening.
+1. **extensions** — the Cedar extension types.
+1. **sqlite** — SQLite and Turso.
+1. **benchmarks**.
+
+Deviations from the text above that were decided during implementation:
+
+- Sets and records are stored as canonical JSONB (sets deduplicated and sorted, records and entity references
+  wrapped) rather than `[]<type>` arrays, so that JSONB equality is Cedar equality for every nested shape.
+- The hierarchy table may hold the transitive closure instead of the direct edges (the recursive CTE tolerates both).
+
+The crate expects a checkout of [`cedar-woodpecker`] (a fork of `cedar`) next to this repository, as `cedar-spec`
+does. Tests need a Postgres: set `CEDAR_SQL_PG_URL`, or leave it unset to have an embedded Postgres downloaded and
+started on first use.
+
+[`cedar-sql-spec`]: https://github.com/luxas/cedar-sql-spec
+[`cedar-woodpecker`]: https://github.com/luxas/cedar-woodpecker
+
 ## Benchmarks
 
 - Compare how fast it is for single checks vs "cross-product of principal x resource"

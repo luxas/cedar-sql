@@ -1,0 +1,52 @@
+name: Build and test cedar-sql
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build_and_test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CEDAR_SQL_PG_URL: postgres://postgres@localhost:5432/postgres
+    steps:
+      - name: Checkout cedar-sql
+        uses: actions/checkout@v7
+        with:
+          path: ./cedar-sql
+      - name: Checkout cedar (luxas/cedar-woodpecker)
+        uses: actions/checkout@v7
+        with:
+          repository: luxas/cedar-woodpecker
+          path: ./cedar
+      - name: Prepare Rust build
+        run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - name: cargo fmt
+        working-directory: ./cedar-sql
+        run: cargo fmt --all --check
+      - name: cargo build
+        working-directory: ./cedar-sql
+        run: RUSTFLAGS="-D warnings" cargo build --all-features
+      - name: cargo clippy
+        working-directory: ./cedar-sql
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: cargo test
+        working-directory: ./cedar-sql
+        run: cargo test --all-features -- --nocapture
