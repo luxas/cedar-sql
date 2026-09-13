@@ -1,0 +1,9 @@
+[
+  {"uid": {"type": "App::User", "id": "u1"},
+   "attrs": {"user_id": "u1", "config": {"a": true, "b": "x"}, "__entity_id2": "other"},
+   "parents": [],
+   "tags": {"role": {"__entity": {"type": "App::UserTag", "id": "t1"}}}},
+  {"uid": {"type": "App::UserTag", "id": "t1"}, "attrs": {"categories": ["b", "a"], "enabled": false}, "parents": []},
+  {"uid": {"type": "App::UserTag", "id": "t2"}, "attrs": {"enabled": true}, "parents": []},
+  {"uid": {"type": "cedar_entity_hierarchy", "id": "h"}, "attrs": {"__entity_id": 5, "__entity_type": "s"}, "parents": []}
+]

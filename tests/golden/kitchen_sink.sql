@@ -1,6 +1,6 @@
 CREATE TABLE "Doc" (
   "__entity_id" TEXT NOT NULL,
-  "__entity_type" TEXT GENERATED ALWAYS AS ('Doc') STORED,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Doc') STORED,
   "owner" TEXT NOT NULL,
   PRIMARY KEY ("__entity_id")
 );
@@ -12,12 +12,12 @@ CREATE TABLE "Doc_tags" (
 );
 CREATE TABLE "Group" (
   "__entity_id" TEXT NOT NULL,
-  "__entity_type" TEXT GENERATED ALWAYS AS ('Group') STORED,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Group') STORED,
   PRIMARY KEY ("__entity_id")
 );
 CREATE TABLE "User" (
   "__entity_id" TEXT NOT NULL,
-  "__entity_type" TEXT GENERATED ALWAYS AS ('User') STORED,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('User') STORED,
   "admin" BOOLEAN NOT NULL,
   "age" BIGINT,
   "friend" TEXT,

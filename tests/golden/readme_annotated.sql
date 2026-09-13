@@ -1,6 +1,6 @@
 CREATE TABLE "App::User" (
-  "__entity_id3" TEXT GENERATED ALWAYS AS ("user_id") STORED,
-  "__entity_type2" TEXT GENERATED ALWAYS AS ('App::User') STORED,
+  "__entity_id3" TEXT NOT NULL GENERATED ALWAYS AS ("user_id") STORED,
+  "__entity_type2" TEXT NOT NULL GENERATED ALWAYS AS ('App::User') STORED,
   "__entity_id2" TEXT NOT NULL,
   "custom_config" JSONB NOT NULL,
   "user_id" TEXT NOT NULL UNIQUE,
@@ -13,8 +13,8 @@ CREATE TABLE "App::User_tags" (
   PRIMARY KEY ("entity_id", "tag")
 );
 CREATE TABLE "usertags" (
-  "__entity_id3" TEXT GENERATED ALWAYS AS ("custom_eid") STORED,
-  "__entity_type2" TEXT GENERATED ALWAYS AS ('App::UserTag') STORED,
+  "__entity_id3" TEXT NOT NULL GENERATED ALWAYS AS ("custom_eid") STORED,
+  "__entity_type2" TEXT NOT NULL GENERATED ALWAYS AS ('App::UserTag') STORED,
   "categories" JSONB,
   "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
   "custom_pk" BIGINT NOT NULL UNIQUE GENERATED ALWAYS AS IDENTITY,
@@ -23,7 +23,7 @@ CREATE TABLE "usertags" (
 );
 CREATE TABLE "cedar_entity_hierarchy" (
   "__entity_id3" TEXT NOT NULL,
-  "__entity_type2" TEXT GENERATED ALWAYS AS ('cedar_entity_hierarchy') STORED,
+  "__entity_type2" TEXT NOT NULL GENERATED ALWAYS AS ('cedar_entity_hierarchy') STORED,
   "__entity_id" BIGINT NOT NULL,
   "__entity_type" TEXT NOT NULL,
   PRIMARY KEY ("__entity_id3")

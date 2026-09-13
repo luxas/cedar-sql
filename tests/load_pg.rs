@@ -101,6 +101,80 @@ fn round_trip() {
 }
 
 #[test]
+fn annotated_round_trip() {
+    let src = std::fs::read_to_string("tests/schemas/readme_annotated.cedarschema").unwrap();
+    let (config, schema) = DatabaseConfiguration::from_cedarschema_str(&src).unwrap();
+    let json = std::fs::read_to_string("tests/entities/readme_annotated.json").unwrap();
+    let entities = Entities::from_json_str(&json, Some(&schema)).unwrap();
+    let load = entities_to_sql(&entities, &schema, &config, &Postgres).unwrap();
+    let mut db = SharedPostgres::get().unwrap().connect().unwrap();
+    db.begin().unwrap();
+    for statement in create_tables(&config, &Postgres).unwrap() {
+        db.execute_batch(&statement).unwrap();
+    }
+    for statement in &load.statements {
+        db.execute_batch(statement)
+            .unwrap_or_else(|e| panic!("{statement}\n{e}"));
+    }
+    db.execute_batch("SET CONSTRAINTS ALL IMMEDIATE").unwrap();
+    let users = db
+        .query("SELECT \"__entity_id3\", \"__entity_type2\", \"user_id\", \"custom_config\", \"__entity_id2\" FROM \"App::User\"")
+        .unwrap();
+    assert_eq!(
+        users,
+        vec![vec![
+            text("u1"),
+            text("App::User"),
+            text("u1"),
+            SqlValue::Json(json!({"r": {"a": true, "b": "x"}})),
+            text("other"),
+        ]]
+    );
+    let tags = db
+        .query("SELECT \"entity_id\", \"tag\", \"value\" FROM \"App::User_tags\"")
+        .unwrap();
+    assert_eq!(tags, vec![vec![text("u1"), text("role"), text("t1")]]);
+    let usertags = db
+        .query("SELECT \"__entity_id3\", \"custom_pk\", \"custom_eid\", \"categories\", \"enabled\" FROM \"usertags\" ORDER BY 2")
+        .unwrap();
+    assert_eq!(
+        usertags,
+        vec![
+            vec![
+                text("t1"),
+                SqlValue::Long(1),
+                text("t1"),
+                SqlValue::Json(json!(["a", "b"])),
+                SqlValue::Bool(false)
+            ],
+            vec![
+                text("t2"),
+                SqlValue::Long(2),
+                text("t2"),
+                SqlValue::Null,
+                SqlValue::Bool(true)
+            ],
+        ]
+    );
+    let hierarchy_entities = db
+        .query("SELECT \"__entity_id3\", \"__entity_id\", \"__entity_type\" FROM \"cedar_entity_hierarchy\"")
+        .unwrap();
+    assert_eq!(
+        hierarchy_entities,
+        vec![vec![text("h"), SqlValue::Long(5), text("s")]]
+    );
+    // The id column exposed as an attribute must agree with the entity id.
+    let bad = Entities::from_json_str(
+        r#"[{"uid": {"type": "App::User", "id": "u9"}, "attrs": {"user_id": "u1", "config": {"a": true, "b": "x"}, "__entity_id2": "o"}, "parents": []}]"#,
+        None,
+    )
+    .unwrap();
+    let e = entities_to_sql(&bad, &schema, &config, &Postgres).expect_err("an error");
+    assert!(e.to_string().contains("must equal the entity id"), "{e}");
+    db.rollback().unwrap();
+}
+
+#[test]
 fn rejects_bad_entities() {
     let src = std::fs::read_to_string("tests/schemas/kitchen_sink.cedarschema").unwrap();
     let (config, schema) = DatabaseConfiguration::from_cedarschema_str(&src).unwrap();
@@ -125,6 +199,26 @@ fn rejects_bad_entities() {
     assert!(
         case(r#"[{"uid": {"type": "Nope", "id": "g"}, "attrs": {}, "parents": []}]"#)
             .contains("no table stores")
+    );
+    // Entity references must be of the referenced type; strings and references
+    // do not mix.
+    assert!(
+        case(r#"[{"uid": {"type": "Doc", "id": "d"}, "attrs": {"owner": {"__entity": {"type": "Group", "id": "g"}}}, "parents": []}]"#)
+            .contains("referencing User")
+    );
+    assert!(
+        case(
+            r#"[{"uid": {"type": "Doc", "id": "d"}, "attrs": {"owner": "alice"}, "parents": []}]"#
+        )
+        .contains("referencing User")
+    );
+    assert!(
+        case(r#"[{"uid": {"type": "Group", "id": "g"}, "attrs": {}, "parents": [], "tags": {}}, {"uid": {"type": "User", "id": "u"}, "attrs": {"name": {"__entity": {"type": "User", "id": "x"}}, "admin": true, "groups": [], "profile": {"city": "", "pets": []}, "friends": []}, "parents": []}]"#)
+            .contains("cannot be stored in a column of type Text")
+    );
+    assert!(
+        case(r#"[{"uid": {"type": "Doc", "id": "d"}, "attrs": {"owner": {"__entity": {"type": "User", "id": "u"}}}, "parents": [], "tags": {"t": {"__entity": {"type": "Group", "id": "g"}}}}]"#)
+            .contains("referencing User")
     );
     // A NUL character, which Postgres cannot store, is rejected up front.
     let nul = Entity::new_no_attrs(

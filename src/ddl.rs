@@ -7,7 +7,7 @@ use crate::config::{
     TAGS_VALUE_COLUMN, TableConfiguration,
 };
 use crate::dialect::Dialect;
-use crate::ident::{MAX_IDENTIFIER_BYTES, SQLIdentifier};
+use crate::ident::{SQLIdentifier, shortened};
 
 /// The statements creating every table of `config`: the entity tables, their
 /// tags tables, the hierarchy table, and then the foreign keys as
@@ -105,10 +105,11 @@ fn create_entity_table(
 
 fn column_definition(cc: &ColumnConfiguration, dialect: &dyn Dialect) -> String {
     let mut parts = vec![dialect.render_type(&cc.ty)];
+    if !cc.nullable {
+        parts.push("NOT NULL".into());
+    }
     if let Some(expr) = &cc.generated {
         parts.push(dialect.generated_column(expr));
-    } else if !cc.nullable {
-        parts.push("NOT NULL".into());
     }
     if cc.unique {
         parts.push("UNIQUE".into());
@@ -125,33 +126,10 @@ fn alter_foreign_key(
     target_table: &SQLIdentifier,
     target_column: &SQLIdentifier,
 ) -> Result<String> {
-    let constraint = constraint_name(&format!("{}_{}_fkey", table.as_str(), column.as_str()))?;
+    let constraint = shortened(&format!("{}_{}_fkey", table.as_str(), column.as_str()));
     // Deferred, so that rows may reference rows loaded later in the same
     // transaction (`User.friend: User`, or two types referencing each other).
     Ok(format!(
         "ALTER TABLE {table} ADD CONSTRAINT {constraint} FOREIGN KEY ({column}) REFERENCES {target_table} ({target_column}) DEFERRABLE INITIALLY DEFERRED"
     ))
-}
-
-/// `name`, shortened to the identifier limit with a hash of the whole name
-/// when it is too long, so that distinct long names stay distinct.
-fn constraint_name(name: &str) -> Result<SQLIdentifier> {
-    if name.len() <= MAX_IDENTIFIER_BYTES {
-        return SQLIdentifier::new(name);
-    }
-    let hash = format!("{:016x}", fxhash(name));
-    let keep = MAX_IDENTIFIER_BYTES - hash.len() - 1;
-    let mut prefix = name.to_owned();
-    while !prefix.is_char_boundary(keep) || prefix.len() > keep {
-        prefix.pop();
-    }
-    SQLIdentifier::new(format!("{prefix}_{hash}"))
-}
-
-/// A small stable hash (FNV-1a), so constraint names do not depend on the
-/// standard library's hasher.
-fn fxhash(s: &str) -> u64 {
-    s.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-    })
 }

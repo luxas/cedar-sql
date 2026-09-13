@@ -147,7 +147,9 @@ pub fn collect(fragment: &Fragment<RawName>) -> Result<SqlAnnotations> {
 }
 
 /// The record type an entity shape denotes: the record itself, or the record
-/// behind a common type name (same namespace first, then the empty one).
+/// behind a common type name. An unqualified name is looked up in the
+/// declaring namespace, then in the empty one; a qualified name in the
+/// namespace it names.
 fn resolve_record<'f>(
     ty: &'f Type<RawName>,
     def: &'f NamespaceDefinition<RawName>,
@@ -163,13 +165,24 @@ fn resolve_record<'f>(
             ty: TypeVariant::EntityOrCommon { type_name },
             ..
         } => {
-            let wanted = type_name.to_string();
-            let empty = fragment.0.get(&None);
-            [Some(def), empty]
+            let full = type_name.to_string();
+            let (namespaces, id): (Vec<Option<&NamespaceDefinition<RawName>>>, &str) =
+                match full.rsplit_once("::") {
+                    Some((ns, id)) => {
+                        let named = fragment
+                            .0
+                            .iter()
+                            .find(|(k, _)| k.as_ref().is_some_and(|k| k.to_string() == ns))
+                            .map(|(_, d)| d);
+                        (vec![named], id)
+                    }
+                    None => (vec![Some(def), fragment.0.get(&None)], full.as_str()),
+                };
+            namespaces
                 .into_iter()
                 .flatten()
                 .flat_map(|d| d.common_types.iter())
-                .find(|(id, _)| id.to_string() == wanted)
+                .find(|(k, _)| k.to_string() == id)
                 .and_then(|(_, common)| resolve_record(&common.ty, def, fragment))
         }
         Type::Type { .. } => None,

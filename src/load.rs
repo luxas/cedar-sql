@@ -20,8 +20,8 @@ use cedar_policy_core::validator::ValidatorSchema;
 use serde_json::json;
 
 use crate::config::{
-    DatabaseConfiguration, HIERARCHY_COLUMNS, SQLType, TAGS_ENTITY_ID_COLUMN, TAGS_TAG_COLUMN,
-    TAGS_VALUE_COLUMN,
+    ColumnConfiguration, DatabaseConfiguration, HIERARCHY_COLUMNS, SQLType, TAGS_ENTITY_ID_COLUMN,
+    TAGS_TAG_COLUMN, TAGS_VALUE_COLUMN,
 };
 use crate::dialect::Dialect;
 use crate::ident::quoted_literal;
@@ -68,8 +68,8 @@ pub fn entities_to_sql(
             if *column == table.entity_id_column {
                 // The id column is also exposed as an attribute; the values must agree.
                 match entity.get(attr) {
-                    Some(PartialValue::Value(v)) if literal(v, &SQLType::Text, dialect)? == eid => {
-                    }
+                    Some(PartialValue::Value(v)) if matches!(v.value_kind(), ValueKind::Lit(Literal::String(s)) if s.as_str() == uid.eid().as_ref()) =>
+                        {}
                     _ => {
                         return Err(Error::Load(format!(
                             "attribute {attr} of {uid} must equal the entity id, since it is the entity id column"
@@ -86,7 +86,7 @@ pub fn entities_to_sql(
                         "required attribute {attr} of {uid} is missing"
                     )));
                 }
-                Some(PartialValue::Value(v)) => literal(v, &cc.ty, dialect)?,
+                Some(PartialValue::Value(v)) => literal(v, cc, dialect)?,
                 Some(PartialValue::Residual(_)) => {
                     return Err(Error::Unsupported("entities with unknown attribute values"));
                 }
@@ -138,25 +138,40 @@ pub fn entities_to_sql(
                 "INSERT INTO {} (\"{TAGS_ENTITY_ID_COLUMN}\", \"{TAGS_TAG_COLUMN}\", \"{TAGS_VALUE_COLUMN}\") VALUES ({eid}, {}, {})",
                 tags_table.table,
                 quoted_literal(tag)?,
-                literal(value, &tags_table.value.ty, dialect)?,
+                literal(value, &tags_table.value, dialect)?,
             ));
         }
     }
     Ok(load)
 }
 
-/// `value` as a SQL literal of column type `ty`.
-pub fn literal(value: &Value, ty: &SQLType, dialect: &dyn Dialect) -> Result<String> {
+/// `value` as a SQL literal for `column`: strings and entity references of
+/// the referenced type in text columns, integers, booleans, and the canonical
+/// JSON of sets and records.
+pub fn literal(
+    value: &Value,
+    column: &ColumnConfiguration,
+    dialect: &dyn Dialect,
+) -> Result<String> {
     let mismatch = || {
         Error::Load(format!(
-            "the value {value} cannot be stored in a column of type {ty:?}"
+            "the value {value} cannot be stored in a column of type {:?}{}",
+            column.ty,
+            column
+                .references
+                .as_ref()
+                .map(|fk| format!(" referencing {}", fk.entity_type))
+                .unwrap_or_default()
         ))
     };
-    match (ty, value.value_kind()) {
-        (SQLType::Text, ValueKind::Lit(Literal::String(s))) => quoted_literal(s),
-        (SQLType::Text, ValueKind::Lit(Literal::EntityUID(uid))) => {
-            quoted_literal(uid.eid().as_ref())
+    match (&column.ty, value.value_kind()) {
+        (SQLType::Text, ValueKind::Lit(Literal::String(s))) if column.references.is_none() => {
+            quoted_literal(s)
         }
+        (SQLType::Text, ValueKind::Lit(Literal::EntityUID(uid))) => match &column.references {
+            Some(fk) if fk.entity_type == *uid.entity_type() => quoted_literal(uid.eid().as_ref()),
+            _ => Err(mismatch()),
+        },
         (SQLType::BigInt, ValueKind::Lit(Literal::Long(n))) => Ok(dialect.bigint_literal(*n)),
         (SQLType::Bool, ValueKind::Lit(Literal::Bool(b))) => {
             Ok(if *b { "TRUE" } else { "FALSE" }.to_owned())
@@ -193,7 +208,14 @@ pub fn canonical_json(value: &Value) -> Result<serde_json::Value> {
         ValueKind::Record(record) => {
             let fields = record
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), canonical_json(v)?)))
+                .map(|(k, v)| {
+                    if k.contains('\0') {
+                        return Err(Error::Load(format!(
+                            "the record key {k:?} contains a NUL character, which Postgres cannot store"
+                        )));
+                    }
+                    Ok((k.to_string(), canonical_json(v)?))
+                })
                 .collect::<Result<serde_json::Map<String, serde_json::Value>>>()?;
             json!({ "r": fields })
         }

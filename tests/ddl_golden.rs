@@ -54,3 +54,23 @@ fn readme_annotated() {
 fn kitchen_sink() {
     check("kitchen_sink");
 }
+
+#[test]
+fn pk_and_refs() {
+    let statements = check("pk_and_refs");
+    // The shortened constraint names are within the limit and distinct.
+    let names: Vec<&str> = statements
+        .iter()
+        .filter_map(|s| s.split("ADD CONSTRAINT \"").nth(1))
+        .map(|s| s.split('"').next().unwrap())
+        .collect();
+    assert_eq!(names.len(), 4);
+    assert!(names.iter().all(|n| n.len() <= 63), "{names:?}");
+    assert_eq!(
+        names
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        4
+    );
+}

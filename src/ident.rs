@@ -71,6 +71,31 @@ impl From<SQLIdentifier> for String {
     }
 }
 
+/// `raw` as an identifier, shortened with a hash of the whole name when it is
+/// longer than [`MAX_IDENTIFIER_BYTES`] (Postgres would otherwise truncate it
+/// silently, so that two long names could collide). NUL characters are
+/// dropped.
+pub fn shortened(raw: &str) -> SQLIdentifier {
+    let raw = raw.replace('\0', "");
+    if !raw.is_empty() && raw.len() <= MAX_IDENTIFIER_BYTES {
+        return SQLIdentifier::new(raw).expect("validated");
+    }
+    let hash = format!("{:016x}", fnv1a(&raw));
+    let mut cut = (MAX_IDENTIFIER_BYTES - hash.len() - 1).min(raw.len());
+    while !raw.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    SQLIdentifier::new(format!("{}_{hash}", &raw[..cut])).expect("within the limit")
+}
+
+/// A small stable hash (FNV-1a), so generated names do not depend on the
+/// standard library's hasher.
+fn fnv1a(s: &str) -> u64 {
+    s.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
 /// `s` as a single-quoted SQL string literal, with `'` doubled. Backslashes
 /// are literal (Postgres `standard_conforming_strings`, SQLite always).
 ///
@@ -96,6 +121,20 @@ mod tests {
         assert_eq!(id.to_string(), "\"App::\"\"User\"\"\"");
         assert_eq!(quoted_literal("it's").unwrap(), "'it''s'");
         assert!(quoted_literal("a\0b").is_err());
+    }
+
+    #[test]
+    fn shortening() {
+        let long = format!("{}{}", "a".repeat(45), "ä".repeat(8));
+        let short = shortened(&format!("{long}_owner_fkey"));
+        assert!(short.as_str().len() <= MAX_IDENTIFIER_BYTES, "{short}");
+        assert!(short.as_str().starts_with("aaaa"));
+        assert_ne!(
+            shortened(&format!("{long}_a_fkey")),
+            shortened(&format!("{long}_b_fkey"))
+        );
+        assert_eq!(shortened("x").as_str(), "x");
+        assert_eq!(shortened("").as_str().len(), 17);
     }
 
     #[test]

@@ -1,18 +1,18 @@
 CREATE TABLE "documents" (
   "__entity_id" TEXT NOT NULL,
-  "__entity_type" TEXT GENERATED ALWAYS AS ('Document') STORED,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Document') STORED,
   "parent" TEXT NOT NULL,
   PRIMARY KEY ("__entity_id")
 );
 CREATE TABLE "folders" (
   "__entity_id" TEXT NOT NULL,
-  "__entity_type" TEXT GENERATED ALWAYS AS ('Folder') STORED,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Folder') STORED,
   "confidential" BOOLEAN NOT NULL,
   PRIMARY KEY ("__entity_id")
 );
 CREATE TABLE "users" (
   "__entity_id" TEXT NOT NULL,
-  "__entity_type" TEXT GENERATED ALWAYS AS ('User') STORED,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('User') STORED,
   "firstName" TEXT NOT NULL,
   PRIMARY KEY ("__entity_id")
 );
