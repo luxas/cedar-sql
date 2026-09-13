@@ -151,11 +151,75 @@ fn entity_id_column_rules() {
             .collect::<Vec<_>>(),
         ["id"]
     );
+}
+
+#[test]
+fn primary_key_elsewhere_keeps_the_id_unique() {
+    let c = config(
+        r#"
+        @sql_primary_key("id") entity User = { id: String };
+        entity Doc = { owner: User };
+        action a appliesTo { principal: [User], resource: [Doc] };
+        "#,
+    )
+    .unwrap();
+    let user = &c.tables["User"];
+    assert!(user.columns["__entity_id"].unique);
+    assert_eq!(
+        user.primary_keys
+            .iter()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>(),
+        ["id"]
+    );
+    let owner = c.tables["Doc"].columns["owner"]
+        .references
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        (owner.table.as_str(), owner.column.as_str()),
+        ("User", "__entity_id")
+    );
+    assert_eq!(owner.entity_type.to_string(), "User");
+    // The default table's id column is the primary key and not separately unique.
+    assert!(!c.tables["Doc"].columns["__entity_id"].unique);
+}
+
+#[test]
+fn undefined_entity_id_column_is_added() {
+    let c = config(
+        r#"
+        @sql_entity_id_column("external_id") entity User = { name: String };
+        action a appliesTo { principal: [User], resource: [User] };
+        "#,
+    )
+    .unwrap();
+    let user = &c.tables["User"];
+    let added = &user.columns["external_id"];
+    assert!(added.unique && !added.nullable && added.ty == SQLType::Text);
+    assert_eq!(user.entity_id_column.as_str(), "external_id");
+    assert_eq!(
+        user.columns["__entity_id"].generated.as_deref(),
+        Some("\"external_id\"")
+    );
+}
+
+#[test]
+fn annotation_and_custom_config_conflicts() {
     let e = err(r#"
-        @sql_entity_id_column("nope") entity User = { id: String };
+        @sql_entity_id_column("a")
+        @sql_custom_config("{\"entity_id_column\": \"b\", \"columns\": {\"a\": {\"ty\": \"Text\", \"unique\": true}, \"b\": {\"ty\": \"Text\", \"unique\": true}}}")
+        entity User;
         action a appliesTo { principal: [User], resource: [User] };
         "#);
-    assert!(e.contains("does not exist"), "{e}");
+    assert!(e.contains("different entity id columns"), "{e}");
+    let e = err(r#"
+        @sql_primary_key("a")
+        @sql_custom_config("{\"primary_keys\": [\"b\"], \"columns\": {\"a\": {\"ty\": \"Text\"}, \"b\": {\"ty\": \"Text\"}}}")
+        entity User;
+        action a appliesTo { principal: [User], resource: [User] };
+        "#);
+    assert!(e.contains("different primary keys"), "{e}");
 }
 
 #[test]
@@ -192,6 +256,37 @@ fn unsupported() {
         action a appliesTo { principal: [User], resource: [User] };
         "#);
     assert_eq!(e, "unsupported: attributes referencing action entity types");
+}
+
+#[test]
+fn json_common_type_annotations() {
+    let (c, _) = DatabaseConfiguration::from_json_str(
+        r#"{
+          "Lib": {"entityTypes": {}, "actions": {}, "commonTypes": {"Shape": {"type": "Record", "attributes": {"name": {"type": "String", "annotations": {"sql_column": "lib_name"}}}}}},
+          "App": {
+            "commonTypes": {"Shape": {"type": "Record", "attributes": {"name": {"type": "String", "annotations": {"sql_column": "n"}}}}},
+            "entityTypes": {
+              "Plain": {"shape": {"type": "Shape"}},
+              "Qualified": {"shape": {"type": "App::Shape"}},
+              "Cross": {"shape": {"type": "Lib::Shape"}}
+            },
+            "actions": {"a": {"appliesTo": {"principalTypes": ["Plain"], "resourceTypes": ["Qualified", "Cross"]}}}
+          }
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        c.tables["App::Plain"].attribute_columns["name"].as_str(),
+        "n"
+    );
+    assert_eq!(
+        c.tables["App::Qualified"].attribute_columns["name"].as_str(),
+        "n"
+    );
+    assert_eq!(
+        c.tables["App::Cross"].attribute_columns["name"].as_str(),
+        "lib_name"
+    );
 }
 
 #[test]

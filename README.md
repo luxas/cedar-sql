@@ -744,6 +744,8 @@ Deviations from the text above that were decided during implementation:
 - Sets and records are stored as canonical JSONB (sets deduplicated and sorted, records and entity references
   wrapped) rather than `[]<type>` arrays, so that JSONB equality is Cedar equality for every nested shape.
 - The hierarchy table may hold the transitive closure instead of the direct edges (the recursive CTE tolerates both).
+- The `@sql_entity_id_column` target may be the table's (sole) primary key instead of being declared unique.
+- Foreign keys are `DEFERRABLE INITIALLY DEFERRED`, so rows load in any order within a transaction.
 
 The crate expects a checkout of [`cedar-woodpecker`] (a fork of `cedar`) next to this repository, as `cedar-spec`
 does. Tests need a Postgres: set `CEDAR_SQL_PG_URL`, or leave it unset to have an embedded Postgres downloaded and

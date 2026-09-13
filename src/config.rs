@@ -92,6 +92,8 @@ pub struct ForeignKey {
     pub table: SQLIdentifier,
     /// The referenced column (the table's entity id column).
     pub column: SQLIdentifier,
+    /// The referenced entity type.
+    pub entity_type: EntityType,
 }
 
 /// One column.
@@ -343,7 +345,6 @@ impl<'a> Builder<'a> {
                 &entity_id_column,
                 &entity_type_column,
                 &entity_tables,
-                &tables,
             )?;
             tables.insert(table.0, table.1);
         }
@@ -446,8 +447,22 @@ impl<'a> Builder<'a> {
                     },
                 );
             }
-            if entity_id_target.is_none() {
-                entity_id_target = custom.entity_id_column.clone();
+            match (&entity_id_target, &custom.entity_id_column) {
+                (Some(a), Some(b)) if a != b => {
+                    return Err(Error::Schema(format!(
+                        "@sql_entity_id_column and @sql_custom_config of {ety} name different entity id columns"
+                    )));
+                }
+                (None, Some(b)) => entity_id_target = Some(b.clone()),
+                _ => {}
+            }
+            if !primary_keys.is_empty()
+                && !custom.primary_keys.is_empty()
+                && primary_keys != custom.primary_keys
+            {
+                return Err(Error::Schema(format!(
+                    "@sql_primary_key and @sql_custom_config of {ety} name different primary keys"
+                )));
             }
             if primary_keys.is_empty() {
                 primary_keys = custom.primary_keys.clone();
@@ -482,28 +497,30 @@ impl<'a> Builder<'a> {
 
     fn finish(
         &self,
-        draft: Draft,
+        mut draft: Draft,
         entity_id_column: &SQLIdentifier,
         entity_type_column: &SQLIdentifier,
         entity_tables: &HashMap<EntityType, SQLIdentifier>,
-        _finished: &IndexMap<SQLIdentifier, TableConfiguration>,
     ) -> Result<(SQLIdentifier, TableConfiguration)> {
-        let ety = draft.entity_type;
+        let ety = draft.entity_type.clone();
         let mut columns = IndexMap::new();
         let entity_id = match &draft.entity_id_target {
             None => {
-                columns.insert(
-                    entity_id_column.clone(),
-                    ColumnConfiguration::new(SQLType::Text),
-                );
+                let mut column = ColumnConfiguration::new(SQLType::Text);
+                // Unique in its own right when another column is the primary key.
+                column.unique = !draft.primary_keys.is_empty()
+                    && draft.primary_keys.as_slice() != std::slice::from_ref(entity_id_column);
+                columns.insert(entity_id_column.clone(), column);
                 entity_id_column.clone()
             }
             Some(target) => {
-                let Some(column) = draft.columns.get(target) else {
-                    return Err(Error::Schema(format!(
-                        "the entity id column {target} of {ety} does not exist"
-                    )));
-                };
+                if !draft.columns.contains_key(target) {
+                    // An otherwise undefined name adds a column (the README's rule).
+                    let mut added = ColumnConfiguration::new(SQLType::Text);
+                    added.unique = true;
+                    draft.columns.insert(target.clone(), added);
+                }
+                let column = &draft.columns[target];
                 if column.ty != SQLType::Text || column.nullable {
                     return Err(Error::Schema(format!(
                         "the entity id column {target} of {ety} must be a non-nullable text column"
@@ -525,8 +542,9 @@ impl<'a> Builder<'a> {
         let mut type_column = ColumnConfiguration::new(SQLType::Text);
         type_column.generated = Some(crate::ident::quoted_literal(&ety.to_string())?);
         columns.insert(entity_type_column.clone(), type_column);
-        for (name, mut column) in draft.columns {
-            if let Some((_, target)) = draft.references.iter().find(|(c, _)| *c == name) {
+        let references = std::mem::take(&mut draft.references);
+        for (name, mut column) in std::mem::take(&mut draft.columns) {
+            if let Some((_, target)) = references.iter().find(|(c, _)| *c == name) {
                 let Some(table) = entity_tables.get(target) else {
                     return Err(Error::Unsupported(
                         "attributes referencing action entity types",
@@ -535,6 +553,7 @@ impl<'a> Builder<'a> {
                 column.references = Some(ForeignKey {
                     table: table.clone(),
                     column: entity_id_column.clone(), // fixed up by `build`
+                    entity_type: target.clone(),
                 });
             }
             columns.insert(name, column);
@@ -562,6 +581,7 @@ impl<'a> Builder<'a> {
                     value.references = Some(ForeignKey {
                         table: table.clone(),
                         column: entity_id_column.clone(), // fixed up by `build`
+                        entity_type: target.clone(),
                     });
                 }
                 Some(TagsTableConfiguration { table, value })

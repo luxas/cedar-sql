@@ -1,0 +1,15 @@
+// The primary key is another column: the interface id column must stay unique
+// for the foreign keys that reference it.
+@sql_primary_key("id")
+entity User = { id: String };
+
+// A new, otherwise undefined entity id column.
+@sql_entity_id_column("external_id")
+entity Team = { name: String };
+
+// A long table name with multibyte characters, whose constraint names need shortening.
+@sql_table("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaääääääää")
+@sql_tags_table("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaääääää_tags")
+entity Doc = { owner: User, team: Team } tags User;
+
+action view appliesTo { principal: [User], resource: [Doc] };
