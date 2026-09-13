@@ -22,8 +22,12 @@ fn round_trip() {
     let json = std::fs::read_to_string("tests/entities/kitchen_sink.json").unwrap();
     let entities = Entities::from_json_str(&json, Some(&schema)).unwrap();
     let load = entities_to_sql(&entities, &schema, &config, &Postgres).unwrap();
-    assert_eq!(load.actions.len(), 1);
-    assert_eq!(load.actions[0].uid().to_string(), "Action::\"view\"");
+    assert_eq!(load.actions.len(), 4);
+    assert!(
+        load.actions
+            .iter()
+            .any(|a| a.uid().to_string() == "Action::\"view\"")
+    );
 
     let mut db = SharedPostgres::get().unwrap().connect().unwrap();
     db.begin().unwrap();

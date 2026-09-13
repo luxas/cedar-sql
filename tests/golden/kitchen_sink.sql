@@ -18,6 +18,11 @@ BEGIN
   END IF;
 END
 $cedar$;
+CREATE TABLE "Color" (
+  "__entity_id" TEXT NOT NULL,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Color') STORED,
+  PRIMARY KEY ("__entity_id")
+);
 CREATE TABLE "Doc" (
   "__entity_id" TEXT NOT NULL,
   "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Doc') STORED,
@@ -30,6 +35,11 @@ CREATE TABLE "Doc_tags" (
   "value" TEXT NOT NULL,
   PRIMARY KEY ("entity_id", "tag")
 );
+CREATE TABLE "Empty" (
+  "__entity_id" TEXT NOT NULL,
+  "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Empty') STORED,
+  PRIMARY KEY ("__entity_id")
+);
 CREATE TABLE "Group" (
   "__entity_id" TEXT NOT NULL,
   "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Group') STORED,
@@ -41,6 +51,7 @@ CREATE TABLE "User" (
   "admin" BOOLEAN NOT NULL,
   "age" BIGINT,
   "friend" TEXT,
+  "friend.name" TEXT,
   "friends" JSONB NOT NULL,
   "groups" JSONB NOT NULL,
   "name" TEXT NOT NULL,

@@ -40,6 +40,10 @@ pub enum Error {
     /// The query returned rows this crate cannot interpret.
     #[error("unexpected query result: {0}")]
     Query(String),
+    /// A string holds a NUL character, which Postgres `text` cannot store: a
+    /// documented limitation, distinguishable from a loader bug.
+    #[error("the string {0:?} contains a NUL character, which Postgres cannot store")]
+    Nul(String),
     /// The entities cannot be turned into rows of the configured tables.
     #[error("cannot load entities: {0}")]
     Load(String),

@@ -6,7 +6,8 @@
      "groups": ["b", "a", "a"],
      "profile": {"city": "Zürich", "pets": [3, 1, 2], "boss": {"__entity": {"type": "User", "id": "bob"}}},
      "friend": {"__entity": {"type": "User", "id": "bob"}},
-     "friends": [{"__entity": {"type": "User", "id": "bob"}}]
+     "friends": [{"__entity": {"type": "User", "id": "bob"}}],
+     "friend.name": "Bob"
    },
    "parents": [{"type": "Group", "id": "admins"}],
    "tags": {"k": "v", "it's": "q'"}},
@@ -15,7 +16,7 @@
    "parents": []},
   {"uid": {"type": "User", "id": "carol"},
    "attrs": {"name": "Carol", "admin": false, "groups": ["x"], "profile": {"city": "Oslo", "pets": [7]},
-             "friend": {"__entity": {"type": "User", "id": "ghost"}}, "friends": []},
+             "friend": {"__entity": {"type": "User", "id": "ghost"}}, "friends": [], "friend.name": "Bob"},
    "parents": []},
   {"uid": {"type": "User", "id": "weird\"q\\s"},
    "attrs": {"name": "50%_x\\y\nz", "admin": false, "groups": [], "profile": {"city": "", "pets": []}, "friends": []},
@@ -24,5 +25,9 @@
    "attrs": {"owner": {"__entity": {"type": "User", "id": "alice"}}},
    "parents": [{"type": "Group", "id": "admins"}],
    "tags": {"reviewer": {"__entity": {"type": "User", "id": "bob"}}}},
-  {"uid": {"type": "Action", "id": "view"}, "attrs": {}, "parents": []}
+  {"uid": {"type": "Color", "id": "red"}, "attrs": {}, "parents": []},
+  {"uid": {"type": "Action", "id": "view"}, "attrs": {}, "parents": []},
+  {"uid": {"type": "Action", "id": "mate"}, "attrs": {}, "parents": []},
+  {"uid": {"type": "Action", "id": "empty"}, "attrs": {}, "parents": []},
+  {"uid": {"type": "Action", "id": "color"}, "attrs": {}, "parents": []}
 ]

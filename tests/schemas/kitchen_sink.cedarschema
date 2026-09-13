@@ -8,7 +8,11 @@ entity User in [Group] = {
   profile: { city: String, pets: Set<Long>, boss?: User },
   friend?: User,
   friends: Set<User>,
+  "friend.name"?: String,
 } tags String;
+
+entity Empty;
+entity Color enum ["red", "blue"];
 
 entity Doc in [Group] = {
   owner: User,
@@ -19,3 +23,7 @@ action "view" appliesTo {
   resource: [Doc],
   context: { ip: String }
 };
+
+action "mate" appliesTo { principal: [User], resource: [User], context: { ip: String } };
+action "empty" appliesTo { principal: [User], resource: [Empty], context: { ip: String } };
+action "color" appliesTo { principal: [User], resource: [Color], context: { ip: String } };
