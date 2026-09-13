@@ -1,5 +1,108 @@
-//! SQL identifiers.
-//!
-//! Plan 2 adds `SQLIdentifier`: a validated identifier of at most 63 bytes whose
-//! `Display` emits the double-quoted form with `"` doubled, plus
-//! `quoted_literal` for single-quoted string literals.
+//! SQL identifiers and literals.
+
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+use crate::{Error, Result};
+
+/// The longest identifier Postgres keeps intact (`NAMEDATALEN - 1`).
+pub const MAX_IDENTIFIER_BYTES: usize = 63;
+
+/// A validated SQL identifier: non-empty, at most [`MAX_IDENTIFIER_BYTES`]
+/// bytes, without NUL characters. `Display` renders the double-quoted form,
+/// so any identifier — a Cedar type name such as `App::User` included — is
+/// safe to splice into a statement.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct SQLIdentifier(String);
+
+impl SQLIdentifier {
+    /// Validates `name` as an identifier.
+    pub fn new(name: impl Into<String>) -> Result<Self> {
+        let name = name.into();
+        if name.is_empty() {
+            return Err(Error::Identifier(name, "empty"));
+        }
+        if name.len() > MAX_IDENTIFIER_BYTES {
+            return Err(Error::Identifier(name, "longer than 63 bytes"));
+        }
+        if name.contains('\0') {
+            return Err(Error::Identifier(name, "contains a NUL character"));
+        }
+        Ok(Self(name))
+    }
+
+    /// The identifier's text, unquoted.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// `name` followed by `suffix`, e.g. for the `__entity_id2` naming rule or
+    /// a `_tags` table.
+    pub fn with_suffix(&self, suffix: &str) -> Result<Self> {
+        Self::new(format!("{}{suffix}", self.0))
+    }
+}
+
+impl std::borrow::Borrow<str> for SQLIdentifier {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for SQLIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{}\"", self.0.replace('"', "\"\""))
+    }
+}
+
+impl TryFrom<String> for SQLIdentifier {
+    type Error = Error;
+
+    fn try_from(name: String) -> Result<Self> {
+        Self::new(name)
+    }
+}
+
+impl From<SQLIdentifier> for String {
+    fn from(ident: SQLIdentifier) -> String {
+        ident.0
+    }
+}
+
+/// `s` as a single-quoted SQL string literal, with `'` doubled. Backslashes
+/// are literal (Postgres `standard_conforming_strings`, SQLite always).
+///
+/// # Errors
+///
+/// When `s` contains a NUL character, which Postgres `text` cannot store.
+pub fn quoted_literal(s: &str) -> Result<String> {
+    if s.contains('\0') {
+        return Err(Error::Load(format!(
+            "the string {s:?} contains a NUL character, which Postgres cannot store"
+        )));
+    }
+    Ok(format!("'{}'", s.replace('\'', "''")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quoting() {
+        let id = SQLIdentifier::new("App::\"User\"").unwrap();
+        assert_eq!(id.to_string(), "\"App::\"\"User\"\"\"");
+        assert_eq!(quoted_literal("it's").unwrap(), "'it''s'");
+        assert!(quoted_literal("a\0b").is_err());
+    }
+
+    #[test]
+    fn limits() {
+        assert!(SQLIdentifier::new("").is_err());
+        assert!(SQLIdentifier::new("x".repeat(63)).is_ok());
+        assert!(SQLIdentifier::new("x".repeat(64)).is_err());
+        assert!(SQLIdentifier::new("a\0b").is_err());
+    }
+}

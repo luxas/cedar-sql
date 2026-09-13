@@ -1,0 +1,41 @@
+// Forces the entity hierarchy table to add a "2" suffix.
+entity cedar_entity_hierarchy = {
+  // Forces a non-"__entity_id" table interface.
+  __entity_id: Long,
+  // Forces a non-"__entity_type" table interface.
+  __entity_type: String,
+};
+
+namespace App {
+  @sql_entity_id_column("user_id")
+  entity User = {
+    @sql_unique("true")
+    user_id: String,
+
+    // Stored as a jsonb column
+    @sql_column("custom_config")
+    config: Config,
+
+    // Forces a non-"__entity_id2" table interface.
+    __entity_id2: String,
+  } tags UserTag;
+
+  type Config = {
+    a: Bool,
+    b: String,
+  };
+
+  @sql_table("usertags")
+  @sql_custom_config("{\"primary_keys\": [\"custom_pk\"], \"entity_id_column\": \"custom_eid\", \"columns\": {\"custom_pk\": {\"ty\": \"BigInt\", \"unique\": true, \"custom_attrs\": \"GENERATED ALWAYS AS IDENTITY\"}, \"custom_eid\": {\"ty\": \"Text\", \"unique\": true, \"custom_attrs\": \"DEFAULT uuidv7()::text\"}}}")
+  entity UserTag = {
+    categories?: Set<String>,
+
+    @sql_custom_attrs("DEFAULT TRUE")
+    enabled: Bool,
+  };
+
+  action "get" appliesTo {
+    principal: [User],
+    resource: [UserTag]
+  };
+}
