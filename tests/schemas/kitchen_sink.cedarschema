@@ -1,0 +1,21 @@
+entity Group;
+
+entity User in [Group] = {
+  name: String,
+  age?: Long,
+  admin: Bool,
+  groups: Set<String>,
+  profile: { city: String, pets: Set<Long>, boss?: User },
+  friend?: User,
+  friends: Set<User>,
+} tags String;
+
+entity Doc in [Group] = {
+  owner: User,
+} tags User;
+
+action "view" appliesTo {
+  principal: [User],
+  resource: [Doc],
+  context: { ip: String }
+};

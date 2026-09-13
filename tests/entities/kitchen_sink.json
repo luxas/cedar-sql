@@ -1,0 +1,21 @@
+[
+  {"uid": {"type": "Group", "id": "admins"}, "attrs": {}, "parents": []},
+  {"uid": {"type": "User", "id": "alice"},
+   "attrs": {
+     "name": "Alice", "age": 30, "admin": true,
+     "groups": ["b", "a", "a"],
+     "profile": {"city": "Zürich", "pets": [3, 1, 2], "boss": {"__entity": {"type": "User", "id": "bob"}}},
+     "friend": {"__entity": {"type": "User", "id": "bob"}},
+     "friends": [{"__entity": {"type": "User", "id": "bob"}}]
+   },
+   "parents": [{"type": "Group", "id": "admins"}],
+   "tags": {"k": "v", "it's": "q'"}},
+  {"uid": {"type": "User", "id": "bob"},
+   "attrs": {"name": "Bob", "admin": false, "groups": [], "profile": {"city": "", "pets": []}, "friends": []},
+   "parents": []},
+  {"uid": {"type": "Doc", "id": "d1"},
+   "attrs": {"owner": {"__entity": {"type": "User", "id": "alice"}}},
+   "parents": [{"type": "Group", "id": "admins"}],
+   "tags": {"reviewer": {"__entity": {"type": "User", "id": "bob"}}}},
+  {"uid": {"type": "Action", "id": "view"}, "attrs": {}, "parents": []}
+]

@@ -1,0 +1,19 @@
+@sql_table("users")
+entity User = {
+  firstName: String
+};
+
+@sql_table("folders")
+entity Folder = {
+  confidential: Bool
+};
+
+@sql_table("documents")
+entity Document in [Folder] = {
+  parent: Folder
+};
+
+action "get" appliesTo {
+  principal: [User],
+  resource: [Document]
+};
