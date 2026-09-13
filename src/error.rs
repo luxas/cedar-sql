@@ -59,6 +59,18 @@ pub enum Error {
     Provision(String),
 }
 
+impl Error {
+    /// Whether the database cancelled the statement (a `statement_timeout`).
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            Error::Database(e) => e
+                .as_db_error()
+                .is_some_and(|db| *db.code() == postgres::error::SqlState::QUERY_CANCELED),
+            _ => false,
+        }
+    }
+}
+
 /// The server's message when there is one (`postgres::Error`'s own `Display`
 /// is only "db error"), else the client-side description.
 fn describe(error: &postgres::Error) -> String {

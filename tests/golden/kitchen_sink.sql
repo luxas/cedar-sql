@@ -1,3 +1,23 @@
+CREATE OR REPLACE FUNCTION cedar_eq(a jsonb, b jsonb) RETURNS boolean
+LANGUAGE plpgsql IMMUTABLE STRICT AS $cedar$
+BEGIN
+  IF jsonb_typeof(a) = 'array' AND jsonb_typeof(b) = 'array' THEN
+    RETURN NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(a) AS x
+        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(b) AS y WHERE cedar_eq(x.value, y.value)))
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(b) AS y
+        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(a) AS x WHERE cedar_eq(x.value, y.value)));
+  ELSIF jsonb_typeof(a) = 'object' AND jsonb_typeof(b) = 'object' THEN
+    RETURN (SELECT coalesce(array_agg(k ORDER BY k), '{}') FROM jsonb_object_keys(a) AS k)
+         = (SELECT coalesce(array_agg(k ORDER BY k), '{}') FROM jsonb_object_keys(b) AS k)
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_each(a) AS e WHERE NOT cedar_eq(e.value, b -> e.key));
+  ELSE
+    RETURN a = b;
+  END IF;
+END
+$cedar$;
 CREATE TABLE "Doc" (
   "__entity_id" TEXT NOT NULL,
   "__entity_type" TEXT NOT NULL GENERATED ALWAYS AS ('Doc') STORED,

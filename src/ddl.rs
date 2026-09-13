@@ -15,7 +15,7 @@ use crate::ident::{SQLIdentifier, shortened};
 /// order and reference cycles do not matter. The foreign keys are deferred
 /// to the end of the transaction, so rows may be loaded in any order.
 pub fn create_tables(config: &DatabaseConfiguration, dialect: &dyn Dialect) -> Result<Vec<String>> {
-    let mut statements = Vec::new();
+    let mut statements = dialect.helper_functions().0;
     let mut foreign_keys = Vec::new();
     for (name, table) in &config.tables {
         statements.push(create_entity_table(name, table, dialect));
@@ -68,8 +68,9 @@ pub fn create_tables(config: &DatabaseConfiguration, dialect: &dyn Dialect) -> R
     Ok(statements)
 }
 
-/// The statements dropping every table of `config`, if they exist.
-pub fn drop_tables(config: &DatabaseConfiguration) -> Vec<String> {
+/// The statements dropping every table of `config`, if they exist, and the
+/// helper functions.
+pub fn drop_tables(config: &DatabaseConfiguration, dialect: &dyn Dialect) -> Vec<String> {
     let mut names = vec![config.entity_hierarchy_table.clone()];
     for (name, table) in config.tables.iter().rev() {
         if let Some(tags) = &table.tags {
@@ -80,6 +81,7 @@ pub fn drop_tables(config: &DatabaseConfiguration) -> Vec<String> {
     names
         .into_iter()
         .map(|name| format!("DROP TABLE IF EXISTS {name} CASCADE"))
+        .chain(dialect.helper_functions().1)
         .collect()
 }
 

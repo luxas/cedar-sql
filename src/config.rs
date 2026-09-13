@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
 use crate::annotations::{EntityTypeAnnotations, SqlAnnotations};
-use crate::ident::SQLIdentifier;
+use crate::ident::{SQLIdentifier, shortened};
 use crate::{Error, Result};
 
 /// The default name of the interface column holding the entity id.
@@ -223,7 +223,15 @@ impl DatabaseConfiguration {
         schema: &Schema,
         annotations: &SqlAnnotations,
     ) -> Result<Self> {
-        Builder::new(schema.as_ref(), annotations).build()
+        Builder::new(schema.as_ref(), annotations, false).build()
+    }
+
+    /// Like [`Self::from_schema`], but a default table, tags table or column
+    /// name longer than the identifier limit is shortened with a hash
+    /// (`ident::shortened`) instead of requiring an annotation — for schemas
+    /// nobody annotates, such as generated ones.
+    pub fn from_schema_shortening_names(schema: &Schema) -> Result<Self> {
+        Builder::new(schema.as_ref(), &SqlAnnotations::default(), true).build()
     }
 
     /// Parses a schema in the Cedar schema syntax, collecting its annotations.
@@ -275,14 +283,30 @@ struct Draft {
 struct Builder<'a> {
     schema: &'a ValidatorSchema,
     annotations: &'a SqlAnnotations,
+    /// Whether over-long default names are shortened instead of rejected.
+    shorten: bool,
 }
 
 impl<'a> Builder<'a> {
-    fn new(schema: &'a ValidatorSchema, annotations: &'a SqlAnnotations) -> Self {
+    fn new(schema: &'a ValidatorSchema, annotations: &'a SqlAnnotations, shorten: bool) -> Self {
         Self {
             schema,
             annotations,
+            shorten,
         }
+    }
+
+    /// A default name: `raw` as an identifier, shortened when allowed, else
+    /// an error telling which annotation to use.
+    fn default_name(&self, raw: &str, on: &str, annotation: &str) -> Result<SQLIdentifier> {
+        if self.shorten {
+            return Ok(shortened(raw));
+        }
+        SQLIdentifier::new(raw).map_err(|_| {
+            Error::Schema(format!(
+                "{on} is not a valid name ({raw:?}); use @{annotation}"
+            ))
+        })
     }
 
     fn build(self) -> Result<DatabaseConfiguration> {
@@ -380,11 +404,11 @@ impl<'a> Builder<'a> {
         let ety = vet.name().clone();
         let name = match &ann.table {
             Some(name) => name.clone(),
-            None => SQLIdentifier::new(ety.to_string()).map_err(|_| {
-                Error::Schema(format!(
-                    "the entity type name {ety} is not a valid table name; use @sql_table"
-                ))
-            })?,
+            None => self.default_name(
+                &ety.to_string(),
+                &format!("the table name for entity type {ety}"),
+                crate::annotations::TABLE,
+            )?,
         };
         if vet.open_attributes() == OpenTag::OpenAttributes {
             return Err(Error::Unsupported(
@@ -398,11 +422,11 @@ impl<'a> Builder<'a> {
             let attr_ann = ann.attributes.get(attr);
             let column = match attr_ann.and_then(|a| a.column.clone()) {
                 Some(column) => column,
-                None => SQLIdentifier::new(attr.as_str()).map_err(|_| {
-                    Error::Schema(format!(
-                        "attribute {attr} of {ety} is not a valid column name; use @sql_column"
-                    ))
-                })?,
+                None => self.default_name(
+                    attr,
+                    &format!("the column name for attribute {attr} of {ety}"),
+                    crate::annotations::COLUMN,
+                )?,
             };
             if let Some(other) = attribute_columns
                 .iter()
@@ -474,11 +498,11 @@ impl<'a> Builder<'a> {
                 let (ty, reference) = SQLType::for_cedar_type(tag_ty)?;
                 let table = match &ann.tags_table {
                     Some(table) => table.clone(),
-                    None => name.with_suffix(TAGS_TABLE_SUFFIX).map_err(|_| {
-                        Error::Schema(format!(
-                            "the tags table name for {ety} is too long; use @sql_tags_table"
-                        ))
-                    })?,
+                    None => self.default_name(
+                        &format!("{}{TAGS_TABLE_SUFFIX}", name.as_str()),
+                        &format!("the tags table name for entity type {ety}"),
+                        crate::annotations::TAGS_TABLE,
+                    )?,
                 };
                 Some((table, ty, reference))
             }
