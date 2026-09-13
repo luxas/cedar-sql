@@ -105,6 +105,7 @@ const ALICE: &str = "User::\"alice\"";
 const BOB: &str = "User::\"bob\"";
 const CAROL: &str = "User::\"carol\"";
 const NOBODY: &str = "User::\"nobody\"";
+const WEIRD: &str = "User::\"weird\\\"q\\\\s\"";
 const D1: &str = "Doc::\"d1\"";
 const GHOST_NAME: &str = "User::\"ghost\".name == \"x\"";
 
@@ -738,5 +739,69 @@ fn sharing_keeps_queries_linear() {
     assert!(
         sizes[2] - sizes[1] <= 2 * (sizes[1] - sizes[0]) + 64,
         "{sizes:?}"
+    );
+}
+
+#[test]
+fn review_probes() {
+    for closed in [true, false] {
+        let mut fx = Fixture::new(closed);
+        let allow = |fx: &mut Fixture, p: &str, principal: &str| {
+            assert_eq!(
+                fx.clean(&permit(p), principal, D1).decision,
+                Decision::Allow,
+                "{p} {principal}"
+            );
+        };
+        let deny = |fx: &mut Fixture, p: &str, principal: &str| {
+            assert_eq!(
+                fx.clean(&permit(p), principal, D1).decision,
+                Decision::Deny,
+                "{p} {principal}"
+            );
+        };
+        // Literal roots whose ids need quoting or shortening.
+        allow(&mut fx, &format!("{WEIRD}.name like \"50*\""), ALICE);
+        let long = format!("User::\"{}\"", "x".repeat(200));
+        fx.errored(&permit(&format!("{long}.admin")), ALICE, D1);
+        deny(&mut fx, &format!("{long} in Group::\"admins\""), ALICE);
+        // `like` over values holding `%`, `_`, `\\` and a newline.
+        allow(&mut fx, "principal.name like \"50%_x\\\\y*\"", WEIRD);
+        deny(&mut fx, "principal.name like \"50*_x\"", WEIRD);
+        allow(&mut fx, "principal.name like \"*z\"", WEIRD);
+        allow(&mut fx, "principal.name like \"50%_x\\\\y\nz\"", WEIRD);
+        deny(&mut fx, "principal.name like \"50_*\"", WEIRD);
+        // Same-type elements in a set on the right of `in`, and `x in x`.
+        allow(&mut fx, "principal in [User::\"x\", User::\"bob\"]", BOB);
+        deny(&mut fx, "principal in [User::\"x\", User::\"bob\"]", ALICE);
+        allow(&mut fx, "resource.owner in resource.owner", ALICE);
+        allow(
+            &mut fx,
+            "principal has friend && principal.friend in principal.friend",
+            CAROL,
+        );
+        // A join and an ancestors check on the same path.
+        allow(
+            &mut fx,
+            "principal has friend && principal.friend.name == \"Bob\" && !(principal.friend in Group::\"admins\")",
+            ALICE,
+        );
+        allow(&mut fx, "principal in [principal]", ALICE);
+    }
+}
+
+#[test]
+fn has_tag_on_a_tagless_type() {
+    let mut fx = Fixture::new(true);
+    // `Group` declares no tags: `hasTag` is always false, an error stays one.
+    assert_eq!(
+        fx.clean(&permit("!(Group::\"admins\".hasTag(\"k\"))"), ALICE, D1)
+            .decision,
+        Decision::Allow
+    );
+    fx.errored(
+        &permit("Group::\"admins\".hasTag(User::\"ghost\".name)"),
+        ALICE,
+        D1,
     );
 }

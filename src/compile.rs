@@ -174,6 +174,19 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// Registers a root for every unknown request variable, so that the query
+    /// enumerates the candidates even when no policy refers to them.
+    pub fn ensure_unknown_roots(&mut self) {
+        if self.request.principal().eid.is_none() {
+            let ety = self.request.principal_type().clone();
+            self.ensure_root(&RootKey::Principal, &ety);
+        }
+        if self.request.resource().eid.is_none() {
+            let ety = self.request.resource_type().clone();
+            self.ensure_root(&RootKey::Resource, &ety);
+        }
+    }
+
     /// Compiles a residual to a boolean SQL expression.
     pub fn condition(&mut self, r: &Residual) -> Result<String> {
         let compiled = self.expr(r)?;
@@ -645,7 +658,17 @@ impl<'a> Compiler<'a> {
                     return Err(Error::Unsupported("tags of an entity type without a table"));
                 };
                 let Some(tags) = table.tags.clone() else {
-                    return Err(Error::Unsupported("tags of an entity type without tags"));
+                    if op == BinaryOp::HasTag {
+                        // The validator types `hasTag` on a tagless type as `false`.
+                        return Ok(plain(
+                            format!(
+                                "(CASE WHEN {} IS NULL OR {} IS NULL THEN NULL ELSE FALSE END)",
+                                a.sql, b.sql
+                            ),
+                            repr,
+                        ));
+                    }
+                    return Err(Error::Unsupported("getTag on an entity type without tags"));
                 };
                 let (a, b) = (self.share(a), self.share(b));
                 let lookup = format!(
