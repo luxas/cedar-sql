@@ -290,6 +290,27 @@ fn json_common_type_annotations() {
 }
 
 #[test]
+fn long_default_names() {
+    let long = "A".repeat(70);
+    let src = format!(
+        "entity {long} = {{ {long}: String }} tags String; action a appliesTo {{ principal: [{long}], resource: [{long}] }};"
+    );
+    let e = err(&src);
+    assert!(e.contains("use @sql_table"), "{e}");
+    let (_, schema) = DatabaseConfiguration::from_cedarschema_str(
+        "entity User; action a appliesTo { principal: [User], resource: [User] };",
+    )
+    .unwrap();
+    let _ = schema;
+    let schema = cedar_policy::Schema::from_cedarschema_str(&src).unwrap().0;
+    let c = DatabaseConfiguration::from_schema_shortening_names(&schema).unwrap();
+    let (name, table) = c.table_for(&long.parse().unwrap()).unwrap();
+    assert!(name.as_str().len() <= 63 && name.as_str().starts_with("AAAA"));
+    assert!(table.tags.as_ref().unwrap().table.as_str().len() <= 63);
+    assert!(table.attribute_columns[long.as_str()].as_str().len() <= 63);
+}
+
+#[test]
 fn json_schema_annotations() {
     let (c, _) = DatabaseConfiguration::from_json_str(
         r#"{"": {"entityTypes": {"User": {"annotations": {"sql_table": "users"}, "shape": {"type": "Record", "attributes": {"n": {"type": "String", "annotations": {"sql_column": "name"}}}}}}, "actions": {"a": {"appliesTo": {"principalTypes": ["User"], "resourceTypes": ["User"]}}}}}"#,

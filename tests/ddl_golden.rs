@@ -33,7 +33,7 @@ fn check(name: &str) -> Vec<String> {
         db.execute_batch(statement)
             .unwrap_or_else(|e| panic!("{statement}\n{e}"));
     }
-    for statement in drop_tables(&config) {
+    for statement in drop_tables(&config, &Postgres) {
         db.execute_batch(&statement).unwrap();
     }
     db.rollback().unwrap();

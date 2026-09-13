@@ -398,8 +398,9 @@ fn records_like_is_arithmetic() {
     fx.errored(&permit("resource.owner == Doc::\"nope\".owner"), ALICE, D1);
     fx.clean(&permit("context.ip == \"1.2.3.4\""), ALICE, D1);
     assert_eq!(
-        fx.unsupported(&permit("principal.groups == [\"a\"]"), ALICE, D1),
-        "equality of sets or records"
+        fx.check(&permit("principal.groups == [\"a\"]"), ALICE, D1)
+            .decision,
+        Decision::Deny
     );
 }
 
@@ -490,16 +491,50 @@ fn hierarchy_and_tags() {
         );
         deny(&mut fx, "resource.hasTag(principal.name)", ALICE);
         fx.errored(&permit("resource.hasTag(User::\"ghost\".name)"), ALICE, D1);
-        assert_eq!(
-            fx.unsupported(
-                &permit(
-                    "resource.hasTag(\"reviewer\") && resource.getTag(\"reviewer\").name == \"Bob\""
-                ),
-                ALICE,
-                D1
-            ),
-            "attribute access on a computed entity value"
+        // Computed entities (a tag value) are dereferenced by subqueries.
+        allow(
+            &mut fx,
+            "resource.hasTag(\"reviewer\") && resource.getTag(\"reviewer\").name == \"Bob\"",
+            ALICE,
         );
+        deny(
+            &mut fx,
+            "resource.hasTag(\"reviewer\") && resource.getTag(\"reviewer\") has age",
+            ALICE,
+        );
+        deny(
+            &mut fx,
+            "resource.hasTag(\"reviewer\") && resource.getTag(\"reviewer\") has friend && resource.getTag(\"reviewer\").friend.name == \"x\"",
+            ALICE,
+        );
+        if closed {
+            deny(
+                &mut fx,
+                "resource.hasTag(\"reviewer\") && resource.getTag(\"reviewer\") in Group::\"admins\"",
+                ALICE,
+            );
+            allow(
+                &mut fx,
+                "resource.hasTag(\"reviewer\") && resource.getTag(\"reviewer\") in User::\"bob\"",
+                ALICE,
+            );
+        } else {
+            assert_eq!(
+                fx.unsupported(
+                    &permit("resource.hasTag(\"reviewer\") && resource.getTag(\"reviewer\") in Group::\"admins\""),
+                    ALICE,
+                    D1
+                ),
+                "in on a computed entity value over a hierarchy table without its closure"
+            );
+        }
+        // Sets of entities on the right of `in`, literal and computed.
+        deny(&mut fx, "principal in principal.friends", ALICE);
+        allow(&mut fx, "User::\"bob\" in principal.friends", ALICE);
+        deny(&mut fx, "principal in User::\"carol\".friends", ALICE);
+        deny(&mut fx, "resource in Doc::\"d1\".owner.friends", ALICE);
+        allow(&mut fx, "resource in [Group::\"admins\"]", ALICE);
+        fx.errored(&permit("principal in User::\"ghost\".friends"), ALICE, D1);
     }
 }
 
@@ -568,4 +603,140 @@ fn decisions() {
         SqlAuthorizer::new(&fx.schema, &fx.config, &Postgres, &policies),
         Err(Error::Validation(_))
     ));
+}
+
+#[test]
+fn sets_and_records() {
+    let mut fx = Fixture::new(true);
+    let allow = |fx: &mut Fixture, p: &str, principal: &str| {
+        assert_eq!(
+            fx.clean(&permit(p), principal, D1).decision,
+            Decision::Allow,
+            "{p} {principal}"
+        );
+    };
+    let deny = |fx: &mut Fixture, p: &str, principal: &str| {
+        assert_eq!(
+            fx.clean(&permit(p), principal, D1).decision,
+            Decision::Deny,
+            "{p} {principal}"
+        );
+    };
+    allow(&mut fx, "principal.groups == [\"b\", \"a\"]", ALICE);
+    deny(&mut fx, "principal.groups == [\"a\"]", ALICE);
+    allow(&mut fx, "principal.groups == User::\"bob\".groups", BOB);
+    deny(&mut fx, "principal.groups == User::\"bob\".groups", ALICE);
+    allow(&mut fx, "principal.groups.contains(\"a\")", ALICE);
+    deny(&mut fx, "principal.groups.contains(\"z\")", ALICE);
+    allow(&mut fx, "principal.groups.containsAll([\"a\"])", ALICE);
+    allow(
+        &mut fx,
+        "principal.groups.containsAll(User::\"bob\".groups)",
+        ALICE,
+    );
+    deny(
+        &mut fx,
+        "principal.groups.containsAll([\"a\", \"z\"])",
+        ALICE,
+    );
+    allow(
+        &mut fx,
+        "principal.groups.containsAny([\"z\", \"b\"])",
+        ALICE,
+    );
+    deny(&mut fx, "principal.groups.containsAny([\"z\"])", ALICE);
+    allow(&mut fx, "principal.groups.isEmpty()", BOB);
+    deny(&mut fx, "principal.groups.isEmpty()", ALICE);
+    allow(
+        &mut fx,
+        "[principal.name, \"x\"].contains(\"Alice\")",
+        ALICE,
+    );
+    allow(
+        &mut fx,
+        "[principal.name, \"x\"] == [\"x\", \"Alice\", \"x\"]",
+        ALICE,
+    );
+    allow(&mut fx, "{a: principal.name}.a == \"Alice\"", ALICE);
+    allow(&mut fx, "{a: principal.name} == {a: \"Alice\"}", ALICE);
+    allow(
+        &mut fx,
+        "{a: principal.name, s: principal.groups} == {a: \"Alice\", s: [\"a\", \"b\"]}",
+        ALICE,
+    );
+    allow(&mut fx, "principal.friends == [User::\"bob\"]", ALICE);
+    allow(&mut fx, "principal.friends.contains(User::\"bob\")", ALICE);
+    deny(
+        &mut fx,
+        "principal.friends.contains(User::\"carol\")",
+        ALICE,
+    );
+    allow(&mut fx, "principal.profile.pets.contains(3)", ALICE);
+    allow(&mut fx, "principal.profile.pets == [3, 2, 1]", ALICE);
+    allow(
+        &mut fx,
+        "principal has age && [principal.age, 1].contains(30)",
+        ALICE,
+    );
+    allow(
+        &mut fx,
+        "principal has age && [[principal.age], [1]] == [[1], [30]]",
+        ALICE,
+    );
+    fx.errored(&permit("User::\"ghost\".groups.contains(\"a\")"), ALICE, D1);
+    fx.errored(&permit("[User::\"ghost\".name].contains(\"a\")"), ALICE, D1);
+    fx.errored(&permit("{a: User::\"ghost\".name}.a == \"a\""), ALICE, D1);
+    fx.errored(
+        &permit("principal.groups == User::\"ghost\".groups"),
+        ALICE,
+        D1,
+    );
+    // Computed entities from `if`.
+    allow(
+        &mut fx,
+        "(if principal.name == \"Alice\" then principal else User::\"bob\").name == \"Alice\"",
+        ALICE,
+    );
+    allow(
+        &mut fx,
+        "(if principal.name == \"Alice\" then principal else User::\"bob\").name == \"Bob\"",
+        CAROL,
+    );
+    fx.errored(
+        &permit(
+            "(if principal.name == \"Alice\" then principal else User::\"ghost\").name == \"Bob\"",
+        ),
+        CAROL,
+        D1,
+    );
+}
+
+#[test]
+fn sharing_keeps_queries_linear() {
+    let fx = Fixture::new(true);
+    let sizes: Vec<usize> = [4usize, 8, 16]
+        .into_iter()
+        .map(|n| {
+            let conjuncts = (0..n)
+                .map(|i| format!("(principal.name == \"{i}\" || principal.admin)"))
+                .collect::<Vec<_>>()
+                .join(" && ");
+            let policies = PolicySet::from_str(&permit(&conjuncts)).unwrap();
+            let request = fx.request(ALICE, D1);
+            let authorizer =
+                SqlAuthorizer::new(&fx.schema, &fx.config, &Postgres, &policies).unwrap();
+            let compiled = authorizer
+                .compile(
+                    &cedar_sql::authorizer::concrete_request(&request, &fx.schema).unwrap(),
+                    &cedar_sql::authorizer::action_entities(&fx.entities, &fx.schema).unwrap(),
+                )
+                .unwrap();
+            compiled.sql.unwrap().len()
+        })
+        .collect();
+    // Doubling the conjuncts at most doubles the query, plus a constant.
+    assert!(
+        sizes[2] - sizes[1] <= 2 * (sizes[1] - sizes[0]) + 64,
+        "{sizes:?}"
+    );
 }
