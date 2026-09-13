@@ -724,6 +724,13 @@ Other operators are handled accordingly.
 
 The evaluator should eventually pass all Cedar evaluator test using the DRT framework in the `cedar-spec` repo, as well as the `cedar-integration-tests` bundle.
 
+Status: the [`cedar-sql-spec`] fork of `cedar-spec` differentially tests this evaluator against `cedar-policy`'s
+authorizer with the targets `sql-is-authorized-drt` (concrete requests) and `sql-query-drt` (an unknown
+`principal` and/or `resource`, every candidate checked), and runs the `cedar-integration-tests` corpus through
+it. The envelope is: policies that validate strictly, schemas without extension types, and strings without NUL
+characters (which Postgres `text` cannot hold); within it every handwritten integration test and every checked
+corpus test agrees with `cedar-policy`.
+
 ## Status and phases
 
 The implementation is built in phases, one branch and plan document each (`docs/plans/N-slug.md` here, with the
