@@ -1,0 +1,37 @@
+[package]
+name = "cedar-sql"
+edition = "2024"
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+description = "An experimental Cedar evaluator that compiles policy evaluation and entity fetching into SQL"
+repository = "https://github.com/luxas/cedar-sql"
+
+[dependencies]
+cedar-policy = { version = "4.12.0", features = ["tpe"] }
+cedar-policy-core = { version = "4.12.0", features = ["tpe"] }
+indexmap = "2"
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
+serde_json = "1"
+smol_str = "0.3"
+thiserror = "2"
+
+# The `testing` feature provisions a Postgres for the test suites and the
+# differential tests: it connects to `CEDAR_SQL_PG_URL` when set and otherwise
+# starts an embedded server once per process.
+postgresql_embedded = { version = "0.21", features = ["blocking"], optional = true }
+libc = { version = "0.2", optional = true }
+
+[features]
+default = []
+testing = ["dep:postgresql_embedded", "dep:libc"]
+
+[dev-dependencies]
+cedar-sql = { path = ".", features = ["testing"] }
+
+# A checkout of `luxas/cedar-woodpecker` (a fork of `cedar-policy/cedar`) is
+# expected next to this repository, as in `cedar-spec`.
+[patch.crates-io]
+cedar-policy = { path = "../cedar/cedar-policy" }
+cedar-policy-core = { path = "../cedar/cedar-policy-core" }
+cedar-policy-formatter = { path = "../cedar/cedar-policy-formatter" }
