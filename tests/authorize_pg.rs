@@ -804,4 +804,14 @@ fn has_tag_on_a_tagless_type() {
         ALICE,
         D1,
     );
+    // An action type has no table and no tags.
+    assert_eq!(
+        fx.clean(
+            &permit("!(Action::\"view\".hasTag(principal.name))"),
+            ALICE,
+            D1
+        )
+        .decision,
+        Decision::Allow
+    );
 }
